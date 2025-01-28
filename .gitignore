@@ -1,0 +1,6 @@
+*.psd
+data/
+www/
+.backup
+.vscode
+__pycache__
