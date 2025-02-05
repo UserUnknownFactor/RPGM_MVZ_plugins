@@ -83,13 +83,18 @@ const keyMapper = {
 Input.keyMapper[keyMapper[aaKey]] = INPUT_ALIAS; // Default is A (65) key
 Input.gamepadMapper[6] = INPUT_ALIAS; // Default is LT (6) button
 
+function isGameScene() {
+	return SceneManager._scene instanceof Scene_Map || 
+			SceneManager._scene instanceof Scene_Battle;
+}
+
 // Extend Input.update to toggle auto mode
 const oldInputUpdate = Input.update;
 Input.update = function () {
-	if (this.isTriggered(INPUT_ALIAS)) {
+	if (isGameScene() && this.isTriggered(INPUT_ALIAS)) {
 		auto = !auto;
 		if (hasBubbleSupport)
-			MessageBubbleManager.addBubble("Text will now be " + (auto ? "auto-advanced." : "advanced manually."));
+			MessageBubbleManager.addBubble("Text will now be " + (auto ? "auto-advanced." : "advanced manually."), null, "info");
 	}
 	oldInputUpdate.call(this);
 };
@@ -120,7 +125,7 @@ WMP.updateInput = function () {
 	if (auto && wasPaused && !this.pause) {
 		auto = false;
 		if (hasBubbleSupport)
-			MessageBubbleManager.addBubble("Text will now be advanced manually.");
+			MessageBubbleManager.addBubble("Text will now be advanced manually.", null, "info");
 	}
 
 	// Auto-advance logic
@@ -158,7 +163,7 @@ WMP.updateShowFast = function () {
 	if (this._showFast && auto) {
 		auto = false;
 		if (hasBubbleSupport)
-			MessageBubbleManager.addBubble("Text will now be advanced manually.");
+			MessageBubbleManager.addBubble("Text will now be advanced manually.", null, "info");
 	}
 	return oldUpdateShowFast.call(this);
 };

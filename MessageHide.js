@@ -64,13 +64,18 @@ pKey.forEach(p => {
 let MessageHide_messageWindowShowNext = false;
 let MessageHide_messageWindowVisible = true;
 
+function isGameScene() {
+	return SceneManager._scene instanceof Scene_Map || 
+			SceneManager._scene instanceof Scene_Battle;
+}
+
 //=============================================================================
 // Window Message
 //=============================================================================
 const oldInputUpdate = Input.update;
 Input.update = function () {
 	oldInputUpdate.call(this);
-	if (this.isTriggered(INPUT_ALIAS))
+	if (isGameScene() && this.isTriggered(INPUT_ALIAS))
 		MessageHide_messageWindowVisible = !MessageHide_messageWindowVisible;
 };
 

@@ -10,7 +10,7 @@
 * **MessageBubble**: Shows stackable, animated, auto-cleared text toasts/messages in the upper right corner.
 * **MessageHide**: Toggles message and name windows simultaneously using `H` key or right-click.
 * **QSaveLoad**: Quick save/load anywhere (WIP).
-* **RoamingSavePath**: Allows to set custom save path (defaults to `My Documents\My Games`).
+* **RoamingSavePath**: Allows to set custom save path (defaults to `My Documents\My Games\Title`).
 * **RS_ScreenShot**: Screenshots plugin.
 * **TextHexColor**: Allows using hex color in `\C` tags (default, `#fff` and `#FFFFFF` formats).
 * **UTA_MessageSkip**: Mod (WIP), adds ability to skip messages.
