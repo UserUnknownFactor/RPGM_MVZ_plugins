@@ -1,200 +1,168 @@
 //=============================================================================
 // UTA_MessageSkip.js
 //=============================================================================
-// Version    : 1.00
-// LastUpdate : 2016.02.17
-// Author     : T.Akatsuki
-// License    : MIT License(http://opensource.org/licenses/mit-license.php)
+// Version	: 1.10
+// LastUpdate : 2025.02.07
+// Author    : Various (original by T.Akatsuki)
+// License   : MIT License(http://opensource.org/licenses/mit-license.php)
 //=============================================================================
 
 //=============================================================================
 /*:
- * @plugindesc Skip message on pressing a particular key.
- * @author T.Akatsuki
- * 
+ * @plugindesc Allows to skip messages on pressing a particular key.
+ * @author Various
+ *
  * @param Skip Key
  * @desc Set the message skip key. The value has been defined in the Input.KeyMapper is valid.
  * @default control
- * 
+  *
+ * @param Max Speed
+ * @desc Maximum movement speed during skip (normal is 4)
+ * @default 10
+ *
+ * @param Bubble Limit
+ * @desc Limit animated bubbles above character to N frames during skip.
+ * @default 5
+ *
  * @param Show Trace
  * @desc Set state traces display.
  * true  : Show trace., false : Don't show trace.
  * @default false
- * 
+ *
  * @help # Overview
  * MessageSkip plugin can be done to skip in that continue to press a specfic key in a message display.
  * Well there is a message skip functions in such Novel games.
  * Skip if choice window will be temporarily supended.
- * 
+ *
  * # Parameters
  *   Skip Key [any key]
- *     Set the message skip key.
- *     The value that has been defined in Input.keyMapper is valid.
- *     Initial value is in 'control'.
+ *    Set the message skip key.
+ *    The value that has been defined in Input.keyMapper is valid.
+ *    Initial value is in 'control'.
  * 
  *   Show Trace [true|false]
- *     Set whether the issue a trace for debugging.
+ *    Set whether the issue a trace for debugging.
  * 
  * # Plugin Commands
  *   There is no plugin command.
  * 
  * # Change Log
- *   ver 1.00 (Feb 17, 2016)
- *     Initial release.
+ *   ver 1.10 (Feb 7, 2025)
+ *    Added movement and bubble acceleration
  */
-
-/*:ja
- * @plugindesc 特定キーを押す事でメッセージをスキップできるようにします。
- * @author 赤月 智平
- * 
- * @param Skip Key
- * @desc メッセージスキップキーを設定します。Input.keyMapperに定義された値が有効です。
- * @default control
- * 
- * @param Show Trace
- * @desc デバッグ用のトレースを出すかを設定します。
- * true: トレースを表示, false: トレースを表示しない
- * @default false
- * 
- * @help ■概要
- * MessageSkipプラグインではメッセージ表示中に特定のキーを押し続ける事で
- * スキップ処理を行う事ができます。
- * ADV等で良くあるメッセージスキップの機能です。
- * 選択肢を挟む場合は選択肢が表示されるタイミングでスキップが中断されます。
- * 
- * ■パラメータの説明
- *   Skip Key [任意のキー]
- *     メッセージスキップキーを設定します。Input.keyMapperに定義された値が有効です。
- *     初期値はcontrolになっています。他にもshift等が使いやすそうです。
- * 
- *   Show Trace [true|false]
- *     デバッグ用のトレースを出すかを設定します。
- * 
- * ■プラグインコマンド
- *   プラグインコマンドはありません。
- * 
- * ■更新履歴
- *   ver 1.00 (2016.02.17)
- *     初版。
- */
-//=============================================================================
-
-//name space
-var utakata = utakata || (utakata = {});
-
-(function(utakata){
-    //-----------------------------------------------------------------------------
-    // class MessageSkip
-    //-----------------------------------------------------------------------------
-    var MessageSkip = (function(){
-        //constructor
-        function MessageSkip(){
-            this._skipKey = "";         //bind target key
-
-            //trace
-            this._showTrace = false;
-            this._tr = null;
-
-            this.initialize();
-        }
-
-        //private methods
-        MessageSkip.prototype.initialize = function(){
-            var parameters = PluginManager.parameters('UTA_MessageSkip');
-
-            this._skipKey = String(parameters['Skip Key']) || null;
-
-            var _show_tr = (String(parameters['Show Trace']) === "true");
-            this._tr = _show_tr ? function(s){ var str = "MessageSkip: " + s; console.log(str); } : function(s){ };
-
-            this._tr("skip key bind: " + this._skipKey);
-        };
-
-        //protected methods
-        MessageSkip.prototype.isPressedMsgSkipButton = function(){
-            return Input.isPressed(this._skipKey);
-        };
-
-        return MessageSkip;
-    })();
-    utakata.MessageSkip = new MessageSkip();
-})(utakata || (utakata = {}));
-
 
 (function(){
-    //-----------------------------------------------------------------------------
-    // PluginCommands
-    //-----------------------------------------------------------------------------
-    var _Game_Interpreter_pluginCommand = 
-            Game_Interpreter.prototype.pluginCommand;
-    Game_Interpreter.prototype.pluginCommand = function(command, args){
-        _Game_Interpreter_pluginCommand.call(this, command, args);
+const PLUGIN_NAME = 'UTA_MessageSkip'
+const TOP_SPEED = 10;
+const FRAMES_TO_SHOW = 5
 
-        //UT_MessageSkip don't have plugin commands.
-        if(command === 'UT_MessageSkip'){
-            switch(args[0]){
-                default:
-                    break;
-            }
-        }
-    };
+const getBoolean = (str, def) => { return !!str ? !!str.match(/(?:true|y(?:es)?)/i) : !!def };
 
-    //-----------------------------------------------------------------------------
-    // Window_Message
-    //-----------------------------------------------------------------------------
-    //文章表示途中にskipキーが入力された場合は即全表示
-    var _Window_Message_updateShowFast = Window_Message.prototype.updateShowFast;
-    Window_Message.prototype.updateShowFast = function() {
-        _Window_Message_updateShowFast.call(this);
+var parameters = PluginManager.parameters(PLUGIN_NAME);
 
-        if(utakata.MessageSkip.isPressedMsgSkipButton()){
-            this._showFast = true;
-            this._pauseSkip = true;
-        }
-    };
+const _skipKey = String(parameters['Skip Key'] || "control");
+const _maxSpeed = Number(parameters['Max Speed'] || TOP_SPEED);
+const _limitFrames = Number(parameters['Bubble Limit'] || FRAMES_TO_SHOW);
+const _show_tr = getBoolean(parameters['Show Trace'], false);
+const _tr = _show_tr ? (s) => { console.log(`[${PLUGIN_NAME}] ${s}`); } : (s) => {};
 
-    //文章が表示されkey入力待ちの際もskipキーの入力を監視しておく
-    var _Window_Message_updateInput = Window_Message.prototype.updateInput;
-    Window_Message.prototype.updateInput = function() {
-        var ret = _Window_Message_updateInput.call(this);
+_tr("Skip key bound: " + _skipKey);
 
-        if(this.pause && utakata.MessageSkip.isPressedMsgSkipButton()){
-            this.pause = false;
-            if (!this._textState) {
-                this.terminateMessage();
-            }
-            return true;
-        }
+// Check if the skip key is pressed
+const isPressedMsgSkipButton = function(){
+	return Input.isPressed(_skipKey);
+};
 
-        return ret;
-    };
+//-----------------------------------------------------------------------------
+// Window_Message
+//-----------------------------------------------------------------------------
+// If the skip key is pressed while text is being displayed, show all text immediately
+var _Window_Message_updateShowFast = Window_Message.prototype.updateShowFast;
+Window_Message.prototype.updateShowFast = function() {
+	_Window_Message_updateShowFast.call(this);
+	if (isPressedMsgSkipButton()) {
+		this._showFast = true;
+		this._pauseSkip = true;
+	}
+};
 
-    //-----------------------------------------------------------------------------
-    // Window_ScrollText
-    //-----------------------------------------------------------------------------
-    //スクロールメッセージは更に爆速で流れるように
-    var Window_ScrollText_scrollSpeed = Window_ScrollText.prototype.scrollSpeed;
-    Window_ScrollText.prototype.scrollSpeed = function() {
-        var ret = Window_ScrollText_scrollSpeed.call(this);
+// While waiting for key input after displaying text, monitor skip key input
+var _Window_Message_updateInput = Window_Message.prototype.updateInput;
+Window_Message.prototype.updateInput = function() {
+	var ret = _Window_Message_updateInput.call(this);
 
-        if(utakata.MessageSkip.isPressedMsgSkipButton()){
-            ret *= 100;
-        }
-        return ret;
-    };
+	if(this.pause && isPressedMsgSkipButton()){
+		this.pause = false;
+		if (!this._textState)
+			this.terminateMessage();
+		return true;
+	}
+	return ret;
+};
+
+//-----------------------------------------------------------------------------
+// Window_ScrollText
+//-----------------------------------------------------------------------------
+// Scroll messages will flow much faster
+var Window_ScrollText_scrollSpeed = Window_ScrollText.prototype.scrollSpeed;
+Window_ScrollText.prototype.scrollSpeed = function() {
+	var ret = Window_ScrollText_scrollSpeed.call(this);
+	if (isPressedMsgSkipButton()) ret *= 100;
+	return ret;
+};
+
+//-----------------------------------------------------------------------------
+// Window_BattleLog
+//-----------------------------------------------------------------------------
+// Battle log will display at super high speed
+var _Window_BattleLog_messageSpeed = Window_BattleLog.prototype.messageSpeed;
+Window_BattleLog.prototype.messageSpeed = function() {
+	var ret = _Window_BattleLog_messageSpeed.call(this);
+	if (isPressedMsgSkipButton()) ret = 1;
+	return ret;
+};
+
+//-----------------------------------------------------------------------------
+// Game_CharacterBase
+//-----------------------------------------------------------------------------
+// Accelerate character movement/actions when the skip key is pressed
+const _Game_CharacterBase_update = Game_CharacterBase.prototype.update;
+Game_CharacterBase.prototype.update = function() {
+	_Game_CharacterBase_update.call(this);
+
+	// Only handle acceleration during message scenes or when a message just ended but movement continues
+	if ($gameMessage.isBusy() || (this._originalSpeed && $gameMap.isEventRunning())) {
+		// Store original speed when scene starts
+		if (!this._originalSpeed)
+			this._originalSpeed = this.moveSpeed();
+
+		if (isPressedMsgSkipButton()) {
+			this.setMoveSpeed(_maxSpeed);
+		} else {
+			this.setMoveSpeed(this._originalSpeed);
+		}
+	} else if (this._originalSpeed) {
+		// Reset when scene is completely done
+		this.setMoveSpeed(this._originalSpeed);
+		this._originalSpeed = null;
+	}
+};
 
 
-    //-----------------------------------------------------------------------------
-    // Window_BattleLog
-    //-----------------------------------------------------------------------------
-    //バトルログを超高速に
-    var _Window_BattleLog_messageSpeed = Window_BattleLog.prototype.messageSpeed;
-    Window_BattleLog.prototype.messageSpeed = function() {
-        var ret = _Window_BattleLog_messageSpeed.call(this);
-        if(utakata.MessageSkip.isPressedMsgSkipButton()){
-            ret = 1;
-        }
-        return ret;
-    };
+//-----------------------------------------------------------------------------
+// Sprite_Character
+//-----------------------------------------------------------------------------
+// Accelerate balloon animation when the skip key is pressed
+var _Sprite_Character_updateBalloon = Sprite_Character.prototype.updateBalloon;
+Sprite_Character.prototype.updateBalloon = function() {
+	_Sprite_Character_updateBalloon.call(this);
+	if (this._balloonSprite) {
+		if (isPressedMsgSkipButton()) {
+			const minDuration = Math.min(this._balloonSprite._duration, _limitFrames);
+			this._balloonSprite._duration = minDuration;
+		}
+	}
+};
 
 })();
+

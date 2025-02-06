@@ -180,7 +180,7 @@ MessageBubble.prototype.destroy = function() {
 
 MessageBubble.prototype._init = function() {
 	if (this._message.trim() === "") {
-		console.warn("Empty message provided for MessageBubble.");
+		console.warn(`Empty message provided for ${PLUGIN_NAME}`);
 		return;
 	}
 	if (this._body) { this._body.destroy(); this._body = null; }
@@ -193,7 +193,7 @@ MessageBubble.prototype._init = function() {
 
 	this._bitmap.addLoadListener(() => {
 		if (!this._bitmap.isReady()) {
-			console.error("Failed to load the background image for MessageBubble.");
+			console.error(`Failed to load the background image for ${PLUGIN_NAME}`);
 			return;
 		}
 

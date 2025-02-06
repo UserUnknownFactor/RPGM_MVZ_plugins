@@ -94,7 +94,7 @@ Input.update = function () {
 	if (isGameScene() && this.isTriggered(INPUT_ALIAS)) {
 		auto = !auto;
 		if (hasBubbleSupport)
-			MessageBubbleManager.addBubble("Text will now be " + (auto ? "auto-advanced." : "advanced manually."), null, "info");
+			MessageBubbleManager.addBubble("Text will now be " + (auto ? "auto-advanced." : "advanced manually"), null, "info");
 	}
 	oldInputUpdate.call(this);
 };
@@ -125,7 +125,7 @@ WMP.updateInput = function () {
 	if (auto && wasPaused && !this.pause) {
 		auto = false;
 		if (hasBubbleSupport)
-			MessageBubbleManager.addBubble("Text will now be advanced manually.", null, "info");
+			MessageBubbleManager.addBubble("Text will now be advanced manually", null, "info");
 	}
 
 	// Auto-advance logic
@@ -163,7 +163,7 @@ WMP.updateShowFast = function () {
 	if (this._showFast && auto) {
 		auto = false;
 		if (hasBubbleSupport)
-			MessageBubbleManager.addBubble("Text will now be advanced manually.", null, "info");
+			MessageBubbleManager.addBubble("Text will now be advanced manually", null, "info");
 	}
 	return oldUpdateShowFast.call(this);
 };
