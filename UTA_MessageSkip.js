@@ -10,19 +10,26 @@
 //=============================================================================
 /*:
  * @plugindesc Allows to skip messages on pressing a particular key.
- * @author Various
  *
  * @param Skip Key
  * @desc Set the message skip key. The value has been defined in the Input.KeyMapper is valid.
  * @default control
-  *
+ *
  * @param Max Speed
- * @desc Maximum movement speed during skip (normal is 4)
+ * @desc Maximum movement speed during skipping, normal is 4 which disables this.
  * @default 10
  *
  * @param Bubble Limit
- * @desc Limit animated bubbles above character to N frames during skip.
+ * @desc Limit animated bubbles above character to N frames during skipping.
  * @default 5
+ *
+ * @param Scroll Multiplier
+ * @desc Maximum accelerated scroll multiplier during skipping.
+ * @default 2.0
+ *
+ * @param Minimum Wait
+ * @desc Minimum wait in frames during skipping; 0 value disables this option.
+ * @default 15
  *
  * @param Show Trace
  * @desc Set state traces display.
@@ -47,37 +54,44 @@
  *   There is no plugin command.
  * 
  * # Change Log
- *   ver 1.10 (Feb 7, 2025)
- *    Added movement and bubble acceleration
+ *   ver 2.0 (Feb 7, 2025)
+ *    Added movement, bubble, scroll acceleration and wait reduction during skipping
  */
 
 (function(){
 const PLUGIN_NAME = 'UTA_MessageSkip'
-const TOP_SPEED = 10;
-const FRAMES_TO_SHOW = 5
+const TOP_SPEED = 10;         // Maximum game character speed (4 = disabled)
+const FRAMES_TO_SHOW = 5;     // Accelerated balloon max frames (0 = disabled)
+const MAX_SCROLL_MUL = 2.0;   // Maximum scroll speed multiplier (1.0 = disabled)
+const MIN_WAIT = 15;          // Minimum wait reduction (0 = disabled)
+const WAIT_REDUCT_MUL = 0.3;  // Wait reduction multiplier
+const BIG_WAIT_MUL = 0.2;     // Wait reduction multiplier if wait >= 60 frames
+const SCROLL_ACCEL = 0.1;     // How fast scroll accelerates
+const SCROLL_DECEL = 0.2;     // How fast scroll decelerates
 
 const getBoolean = (str, def) => { return !!str ? !!str.match(/(?:true|y(?:es)?)/i) : !!def };
 
-var parameters = PluginManager.parameters(PLUGIN_NAME);
-
+const parameters = PluginManager.parameters(PLUGIN_NAME);
 const _skipKey = String(parameters['Skip Key'] || "control");
 const _maxSpeed = Number(parameters['Max Speed'] || TOP_SPEED);
 const _limitFrames = Number(parameters['Bubble Limit'] || FRAMES_TO_SHOW);
-const _show_tr = getBoolean(parameters['Show Trace'], false);
-const _tr = _show_tr ? (s) => { console.log(`[${PLUGIN_NAME}] ${s}`); } : (s) => {};
+const _scrollMult = parseFloat(parameters['Scroll Multiplier'] || MAX_SCROLL_MUL);
+const _minWait = Number(parameters['Minimum Wait'] || MIN_WAIT);
+const _show_log = getBoolean(parameters['Show Trace'], false);
+const log = _show_log ? (s) => { console.log(`[${PLUGIN_NAME}] ${s}`); } : (s) => {};
 
-_tr("Skip key bound: " + _skipKey);
+log("Skip key bound: " + _skipKey);
 
 // Check if the skip key is pressed
 const isPressedMsgSkipButton = function(){
-	return Input.isPressed(_skipKey);
+	return Input.isPressed(_skipKey) && document.hasFocus();
 };
 
 //-----------------------------------------------------------------------------
 // Window_Message
 //-----------------------------------------------------------------------------
 // If the skip key is pressed while text is being displayed, show all text immediately
-var _Window_Message_updateShowFast = Window_Message.prototype.updateShowFast;
+const _Window_Message_updateShowFast = Window_Message.prototype.updateShowFast;
 Window_Message.prototype.updateShowFast = function() {
 	_Window_Message_updateShowFast.call(this);
 	if (isPressedMsgSkipButton()) {
@@ -87,9 +101,9 @@ Window_Message.prototype.updateShowFast = function() {
 };
 
 // While waiting for key input after displaying text, monitor skip key input
-var _Window_Message_updateInput = Window_Message.prototype.updateInput;
+const _Window_Message_updateInput = Window_Message.prototype.updateInput;
 Window_Message.prototype.updateInput = function() {
-	var ret = _Window_Message_updateInput.call(this);
+	const ret = _Window_Message_updateInput.call(this);
 
 	if(this.pause && isPressedMsgSkipButton()){
 		this.pause = false;
@@ -104,20 +118,47 @@ Window_Message.prototype.updateInput = function() {
 // Window_ScrollText
 //-----------------------------------------------------------------------------
 // Scroll messages will flow much faster
-var Window_ScrollText_scrollSpeed = Window_ScrollText.prototype.scrollSpeed;
+const Window_ScrollText_scrollSpeed = Window_ScrollText.prototype.scrollSpeed;
 Window_ScrollText.prototype.scrollSpeed = function() {
-	var ret = Window_ScrollText_scrollSpeed.call(this);
+	const ret = Window_ScrollText_scrollSpeed.call(this);
 	if (isPressedMsgSkipButton()) ret *= 100;
 	return ret;
 };
+
+
+//-----------------------------------------------------------------------------
+// Game_Map
+//-----------------------------------------------------------------------------
+// Override the scroll distance calculation to double scroll speed on skip
+var currentSpeedMultiplier = 1.0;
+
+// Scroll acceleration logic in update
+const _Game_Map_updateScroll = Game_Map.prototype.updateScroll;
+if (_scrollMult > 1.0)
+	Game_Map.prototype.updateScroll = function() {
+		if (this.isScrolling()) {
+			if (isPressedMsgSkipButton())
+				currentSpeedMultiplier = Math.min(currentSpeedMultiplier + SCROLL_ACCEL, _scrollMult);
+			else if (currentSpeedMultiplier > 1.0)
+				currentSpeedMultiplier = Math.max(currentSpeedMultiplier - SCROLL_DECEL, 1.0);
+
+			let originalSpeed = this._scrollSpeed;
+			this._scrollSpeed *= currentSpeedMultiplier;
+			_Game_Map_updateScroll.call(this);
+			this._scrollSpeed = originalSpeed;
+		} else
+			_Game_Map_updateScroll.call(this);
+	};
+
+
 
 //-----------------------------------------------------------------------------
 // Window_BattleLog
 //-----------------------------------------------------------------------------
 // Battle log will display at super high speed
-var _Window_BattleLog_messageSpeed = Window_BattleLog.prototype.messageSpeed;
+const _Window_BattleLog_messageSpeed = Window_BattleLog.prototype.messageSpeed;
 Window_BattleLog.prototype.messageSpeed = function() {
-	var ret = _Window_BattleLog_messageSpeed.call(this);
+	let ret = _Window_BattleLog_messageSpeed.call(this);
 	if (isPressedMsgSkipButton()) ret = 1;
 	return ret;
 };
@@ -127,42 +168,59 @@ Window_BattleLog.prototype.messageSpeed = function() {
 //-----------------------------------------------------------------------------
 // Accelerate character movement/actions when the skip key is pressed
 const _Game_CharacterBase_update = Game_CharacterBase.prototype.update;
-Game_CharacterBase.prototype.update = function() {
-	_Game_CharacterBase_update.call(this);
+if (_maxSpeed > 4)
+	Game_CharacterBase.prototype.update = function() {
+		_Game_CharacterBase_update.call(this);
 
-	// Only handle acceleration during message scenes or when a message just ended but movement continues
-	if ($gameMessage.isBusy() || (this._originalSpeed && $gameMap.isEventRunning())) {
-		// Store original speed when scene starts
-		if (!this._originalSpeed)
-			this._originalSpeed = this.moveSpeed();
+		// Only handle acceleration during messages, map entry or when a message ended but movement continues
+		if ($gameMessage.isBusy() || $gameMap.isEventRunning()) {
+			// Store original speed when scene starts
+			if (!this._originalSpeed)
+				this._originalSpeed = this.moveSpeed();
 
-		if (isPressedMsgSkipButton()) {
-			this.setMoveSpeed(_maxSpeed);
-		} else {
+			this.setMoveSpeed(isPressedMsgSkipButton() ? _maxSpeed : this._originalSpeed);
+		} else if (this._originalSpeed) {
+			// Reset when scene is completely done
 			this.setMoveSpeed(this._originalSpeed);
+			this._originalSpeed = null;
 		}
-	} else if (this._originalSpeed) {
-		// Reset when scene is completely done
-		this.setMoveSpeed(this._originalSpeed);
-		this._originalSpeed = null;
-	}
-};
+	};
 
 
 //-----------------------------------------------------------------------------
 // Sprite_Character
 //-----------------------------------------------------------------------------
 // Accelerate balloon animation when the skip key is pressed
-var _Sprite_Character_updateBalloon = Sprite_Character.prototype.updateBalloon;
-Sprite_Character.prototype.updateBalloon = function() {
-	_Sprite_Character_updateBalloon.call(this);
-	if (this._balloonSprite) {
-		if (isPressedMsgSkipButton()) {
-			const minDuration = Math.min(this._balloonSprite._duration, _limitFrames);
-			this._balloonSprite._duration = minDuration;
+const _Sprite_Character_updateBalloon = Sprite_Character.prototype.updateBalloon;
+if (_limitFrames > 0)
+	Sprite_Character.prototype.updateBalloon = function() {
+		_Sprite_Character_updateBalloon.call(this);
+		if (this._balloonSprite) {
+			if (isPressedMsgSkipButton()) {
+				const minDuration = Math.min(this._balloonSprite._duration, _limitFrames);
+				this._balloonSprite._duration = minDuration;
+			}
 		}
+	};
+
+function getAdjustedWaitTime(originalWait) {
+	if (isPressedMsgSkipButton()) {	   
+		if (originalWait >= 60)
+			return Math.max(_minWait, Math.floor(originalWait * BIG_WAIT_MUL));
+		else if (originalWait <= _minWait)
+			return originalWait;
+		return Math.max(_minWait, Math.floor(originalWait * WAIT_REDUCT_MUL));
 	}
-};
+	return originalWait;
+}
+
+
+// Patch the Game_Interpreter wait command
+const _Game_Interpreter_wait = Game_Interpreter.prototype.wait;
+if (_minWait > 0)
+	Game_Interpreter.prototype.wait = function(duration) {
+		_Game_Interpreter_wait.call(this, getAdjustedWaitTime(duration));
+	};
 
 })();
 

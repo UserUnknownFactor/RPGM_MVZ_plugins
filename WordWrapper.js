@@ -66,7 +66,7 @@ Window_Message.prototype.wrapToNewLine = function (textState) {
  * returns array of indices representing the start of each word in the
  * full message
  */
-const WORDS_REGEX = /(?:\*|\b)[\S]+(?:\*|\b)\S*/gm;
+const WORDS_REGEX = /(?:[\*"'\^\(\{\[_]|\b)[\S]+(?:[\*"'\.,;\^_\)\}\]$!\?]|\b)\S*/gm;
 Window_Message.prototype.getWordBoundaries = function () {
 	var result = [];
 	var wordBoundaryArr = [];

@@ -1,14 +1,17 @@
 const commandNames = {
     101:"Show Text",
+    401:"Multi-line Text Data",
     102:"Show Choices",
     103:"Input Number",
     104:"Select Item",
     402:"When [**]",
     403:"When Cancel",
+    405:"Scrolling Text",
     103:"Input Number",
     104:"Select Item",
     105:"Show Scrolling Text",
     108:"Comment",
+    408:"Multi-line Comment",
     111:"Conditional Branch",
     411:"Else",
     112:"Loop",
@@ -112,7 +115,8 @@ const commandNames = {
     353:"Game Over",
     354:"Return to Title Screen",
     355:"Script",
-    356:"Plugin",
-    401:"Text data",
-    9999:""
+    655:"Multi-line Script",
+    356:"Plugin Command",
+    357:"Plugin Command MZ",
+    999:""
 };

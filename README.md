@@ -5,12 +5,14 @@
 * **AutoAdvance**: Auto advancing text using `A` key.
 * **DebugJSONLoad**: Get more informative messages on JSON load errors. 
 * **DTextPicture**: Mod that allows translated strings with `_` character auto-replaced to ` `.
-* **FixNWJSClosing**: Fixes stuff bugged on newer NW.js (like closing).
+* **FixImageLoading**: Fixes individual image flicker on load.
+* **FixNWJSstuff**: Fixes stuff bugged on newer NW.js (like closing or console warnings). Optionally adds some common tags to MV.
 * **FPSLimit**: FPS limiter mod.
+* **GALV_DiagonalMovement.js**: Diagonal movement mod with improved path-finding.
 * **MessageBubble**: Shows stackable, animated, auto-cleared text toasts/messages in the upper right corner.
 * **MessageHide**: Toggles message and name windows simultaneously using `H` key or right-click.
 * **QSaveLoad**: Quick save/load anywhere (WIP).
-* **PreloadSceneImages**: Preloads images on demand without reloading between maps/c-events (WIP).
+* **PreloadSceneImages**: Preloads/unloads images when needed, keeping shared between maps (WIP).
 * **RoamingSavePath**: Allows to set custom save path (defaults to `My Documents\My Games\Title`).
 * **RS_ScreenShot**: Screenshots plugin.
 * **TextHexColor**: Allows using hex color in `\C` tags (default, `#fff` and `#FFFFFF` formats).
@@ -20,7 +22,7 @@
 
 ### OTHER STUFF
 
-**RPGM MV/MZ** [opcodes](RPGMMV_codes.js).
+**RPGM MV/MZ** [opcodes](RPGM_codes.js).
 
 **RPGM MV/MZ default color codes**:  
 ![alt text](rpgm_colors.png "RPGM MV/MZ color codes")

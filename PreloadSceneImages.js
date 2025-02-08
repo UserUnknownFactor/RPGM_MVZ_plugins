@@ -123,20 +123,23 @@ const PLUGIN_NAME = 'PreloadSceneImages';
 const getBoolean = (str, def) => { return !!str ? !!str.match(/(?:true|y(?:es)?)/i) : !!def };
 const fs = require('fs');
 const isMZ = Utils.RPGMAKER_NAME === "MZ";
+const MAX_ST_IMAGES_IN_CACHE = 200;
+const MAX_TRACKED_MAPS = 3; // Number of maps to retain resources for
 
 const parameters = PluginManager.parameters(PLUGIN_NAME);
 const preloadImages = getBoolean(parameters['preloadImages'], true);
 const checkScripts = getBoolean(parameters['checkScripts'], false);
 const debugMode = getBoolean(parameters['debugMode'], false);
 const loadBatchSIze = parseInt(parameters['loadBatchSize']) || 5;
-const unloadBatchSIze = parseInt(parameters['unloadBatchSize']) || 10;
-const preloadCommonEventsOnDemand = getBoolean(parameters['preloadCommonEventsOnDemand'], true);
+const unloadBatchSize = parseInt(parameters['unloadBatchSize']) || 10;
+const preloadCEOnDemand = getBoolean(parameters['preloadCommonEventsOnDemand'], true);
 
 var _previousMapId = -1;
 var _isPreloading = false;
 var _loadedResourcesForMap = new Set();
 var _requestedFiles= {};
 var _loadedCommonEvents = new Map();
+var _recentMapsWithResources = []; // Queue to track recent maps and their resources
 
 function log(message) {
 	if (debugMode) console.log(`[${PLUGIN_NAME}] ${message}`);
@@ -156,44 +159,113 @@ function findExistingFile(basePath, extensions) {
 	return null;
 }
 
-function reserveSpecific(path) {
-	let image;
-	path += ".png"
-	if (isMZ) image = ImageManager.requestImage(path);
-	else image = ImageManager.reserveNormalBitmap(path, 0, ImageManager._systemReservationId);
-	image.smooth = true;
-	return image
+function isInCache(resourcePath) {
+	if (isMZ) return ImageManager._cache[resourcePath]
+	let key = ImageManager._generateCacheKey(resourcePath, 0);
+	return ImageManager._imageCache._items[key];
+}
+
+function deleteFromCache(resourcePath) {
+	if (!isMZ) {
+		resourcePath = withExtension(resourcePath)
+		let key = ImageManager._generateCacheKey(resourcePath, 0);
+		let item = ImageManager._imageCache._items[key];
+		if (!item) return false;
+		if (item.bitmap) {
+			if (item.bitmap.destroy) {
+				item.bitmap.destroy();
+			} else {
+				if (item.bitmap._baseTexture) item.bitmap._baseTexture.destroy();
+				if (item.bitmap.__baseTexture) item.bitmap.__baseTexture.destroy(); // for the older version
+			}
+		}
+		delete ImageManager._imageCache._items[key];
+	} else {
+		let item = ImageManager._cache[resourcePath];
+		if (!item) return false;
+		else {
+			item.destroy();
+			delete ImageManager._cache[resourcePath];
+		}
+	}
+	return true;
+}
+
+// Patch to prevent unload on scene change in MZ (unused in MV)
+ImageManager.clear = function() {};
+
+if (SceneManager.onUnload) {
+	const _SceneManager_onUnload = SceneManager.onUnload;
+	SceneManager.onUnload = function() {
+		_SceneManager_onUnload.call(this);
+		const cache = ImageManager._cache;
+		for (const url in cache) {
+			cache[url].destroy();
+		}
+		ImageManager._cache = {};
+	};
+}
+
+// Patch to prevent the silly timed truncation unload on adding images in MV
+if (ImageCache.limit)
+	ImageCache.limit = MAX_ST_IMAGES_IN_CACHE * 1280 * 1024;
+
+// Patch to prevent overriding reservations in MV
+if (typeof ImageCache !== "undefined" && ImageCache.prototype.reserve)
+	ImageCache.prototype.reserve = function(key, value, reservationId){
+		if(!this._items[key])
+			this._items[key] = { bitmap: value, touch: Date.now(), key: key };
+		if (this._items[key].reservationId >= 0)
+			this._items[key].reservationId = reservationId;
+	};
+
+function withExtension(resourcePath) {
+	return resourcePath + ".png";
+}
+
+function addToCache(resourcePath) {
+	resourcePath = withExtension(resourcePath)
+	if (isMZ) {
+		if (!ImageManager._cache[resourcePath])
+			ImageManager._cache[resourcePath] = Bitmap.load(encodeURIComponent(resourcePath).replace(/%2F/g, '/'));
+		return ImageManager._cache[resourcePath];
+	}
+	else {
+		let key = ImageManager._generateCacheKey(resourcePath, 0);
+		let bitmap = ImageManager._imageCache.get(key);
+		if (!bitmap) {
+			bitmap = Bitmap.load(resourcePath);
+			bitmap._smooth = true;
+			//bitmap.addLoadListener(() => bitmap.rotateHue(hue)); // no need to
+			if(!ImageManager._imageCache._items[key]) {
+				ImageManager._imageCache._items[key] = 
+					{ bitmap: bitmap, touch: Date.now(), key: key, reservationId: -1 };
+			} else {
+				ImageManager._imageCache._items[key].bitmap = bitmap;
+			}
+		}
+		return bitmap;
+	}
 };
 
-// NOTE: unnecessary by itself since we recursively parse the event list
 function preloadCommonEvent(commonEventId, preloadImages) {
 	if (commonEventId !== -1 && !_loadedCommonEvents.has(commonEventId)) {
 		const commonEvent = $dataCommonEvents[commonEventId];
 		if (commonEvent) {
 			const commonEventResources = extractImagePathsFromCommands(commonEvent.list);
+			if (!commonEventResources.size) return;
 			if (!preloadImages) {
-				if (commonEventResources.size)
-					_loadedCommonEvents.set(commonEventId, new Set(commonEventResources));
+				_loadedCommonEvents.set(commonEventId, new Set(commonEventResources));
 				return;
 			}
-			log(`Preloading resources for Common Event ${commonEventId}: ${commonEventResources.join(', ')}`);
 			_isPreloading = true;
-			preloadResourceBatch(Array.from(commonEventResources), 0, new Set(), true, () => {
-				_loadedCommonEvents.set(commonEventId, new Set(commonEventResources));
-				_isPreloading = false;
-			});
+			if (commonEventResources.size)
+				preloadResourceBatch(Array.from(commonEventResources), 0, new Set(), true, () => {
+					_loadedCommonEvents.set(commonEventId, new Set(commonEventResources));
+					_isPreloading = false;
+					log(`Finished preloading ${commonEventResources.size} Common Event resources`);
+				});
 		}
-	}
-}
-
-function unloadCommonEvent(commonEventId) {
-	if (_loadedCommonEvents.has(commonEventId)) {
-		const resources = _loadedCommonEvents.get(commonEventId);
-		resources.forEach(resource => {
-			if (deleteFromCache(resource))
-				log(`Unloaded resource (Common Event: ${commonEventId}): ${resource}`);
-		});
-		_loadedCommonEvents.delete(commonEventId);
 	}
 }
 
@@ -273,6 +345,7 @@ function extractImagePathsFromCommands(commandList, extractedPaths) {
 				}
 				break;
 			case 117: // Call Common Event
+				break; // ALT: This is needed only when we load all CE images on map load 
 				if (cmp && Array.isArray(cmp) && cmp.length > 0) {
 					const calledCommonEventId = cmp[0];
 					if(!extractedPaths.has(calledCommonEventId))
@@ -384,7 +457,7 @@ function extractImagePathsFromCommands(commandList, extractedPaths) {
 }
 
 function extractImagePaths(mapData) {
-   if (!mapData || !mapData.events) return [];
+	if (!mapData || !mapData.events) return [];
 
 	const resourcePaths = new Set();
 	const imageExtensions = isMZ ? ['png_', 'png'] : ['rpgmvp', 'png'];
@@ -445,9 +518,38 @@ Scene_Boot.prototype.onDatabaseLoaded = function() {
 	preloadBattleEventResources();
 }
 
+function preloadResource(resourcePath, isCommonEvent, onResourceLoaded) {
+	const bitmap = addToCache(resourcePath);
+	if (!bitmap.isReady() && bitmap.decode) bitmap.decode();
+	if (bitmap.isReady()) { // Check if it's already loaded
+		// Add to map resources only if it's NOT a common event
+		if (!isCommonEvent) {
+			if (!_loadedResourcesForMap[$gameMap.mapId()])
+				_loadedResourcesForMap[$gameMap.mapId()] = new Set();
+			_loadedResourcesForMap[$gameMap.mapId()].add(resourcePath);
+		}
+		log(`${isCommonEvent ? 'Common Event image' : 'Image'} is already loaded: ${resourcePath}`);
+		onResourceLoaded();
+	} else {
+		bitmap.addLoadListener(() => { // Asynchronous loading.
+			if (!isCommonEvent) {
+				if (!_loadedResourcesForMap[$gameMap.mapId()])
+					_loadedResourcesForMap[$gameMap.mapId()] = new Set();
+				_loadedResourcesForMap[$gameMap.mapId()].add(resourcePath);
+			}
+			log(`Preloaded${isCommonEvent ? ' Common Event' : ''} image: ${resourcePath}`);
+			onResourceLoaded();
+		});
+		const errorHandler = function (error) {
+			console.error(`Failed to preload image: ${resourcePath}\n`, error);
+			onResourceLoaded();
+		};
+		if (isMZ) bitmap._onError = errorHandler; else bitmap.onError = errorHandler;
+	}
+}
+
  function preloadResourceBatch(newResourcePaths, startIndex, previousMapResources, isCommonEvent, onComplete) {
 	if (startIndex >= newResourcePaths.length) {
-		log(`Finished preloading resources`);
 		_isPreloading = false;
 		if (onComplete) onComplete();
 		return;
@@ -459,8 +561,7 @@ Scene_Boot.prototype.onDatabaseLoaded = function() {
 		loadedCount++;
 		if (loadedCount === endIndex - startIndex) {
 			setTimeout(() => { 
-			 preloadResourceBatch(newResourcePaths, endIndex, 
-			 previousMapResources, isCommonEvent, onComplete); 
+			 preloadResourceBatch(newResourcePaths, endIndex, previousMapResources, isCommonEvent, onComplete); 
 			}, 0);
 		}
 	}
@@ -483,65 +584,47 @@ Scene_Boot.prototype.onDatabaseLoaded = function() {
 			onResourceLoaded();
 			continue;
 		}
-
-		const bitmap = reserveSpecific(resourcePath);
-		if (bitmap.isReady()) { // Check if it's already loaded
-			// Add to map resources only if it's NOT a common event
-			if (!isCommonEvent) {
-				if (!_loadedResourcesForMap[$gameMap.mapId()])
-					_loadedResourcesForMap[$gameMap.mapId()] = new Set();
-				_loadedResourcesForMap[$gameMap.mapId()].add(resourcePath);
-			}
-			log(`Preloaded image: ${resourcePath}`);
-			onResourceLoaded();
-		} else {
-			bitmap.addLoadListener(() => { // Asynchronous loading.
-				if (!isCommonEvent) {
-					if (!_loadedResourcesForMap[$gameMap.mapId()])
-						_loadedResourcesForMap[$gameMap.mapId()] = new Set();
-					_loadedResourcesForMap[$gameMap.mapId()].add(resourcePath);
-				}
-				log(`Preloaded image: ${resourcePath}`);
-				onResourceLoaded();
-			});
-			bitmap.onError = (error) => {
-				console.error(`Failed to preload image: ${resourcePath}`, error);
-				onResourceLoaded();
-			};
-		}
+		preloadResource(resourcePath, isCommonEvent, onResourceLoaded);
 	}
 }
 
-function isInCache(resourcePath) {
-	let key = ImageManager._generateCacheKey(resourcePath, 0);
-	return ImageManager._imageCache._items[key];
+function unloadCommonEvent(commonEventId) {
+	if (_loadedCommonEvents.has(commonEventId)) {
+		const resources = _loadedCommonEvents.get(commonEventId);
+		resources.forEach(resource => {
+			if (deleteFromCache(resource))
+				log(`Unloaded resource (Common Event: ${commonEventId}): ${resource}`);
+		});
+		_loadedCommonEvents.delete(commonEventId);
+	}
 }
 
-function deleteFromCache(resourcePath) {
-	let key = ImageManager._generateCacheKey(resourcePath, 0);
-	let item = ImageManager._imageCache._items[key];
-	if (!item) return false;
-	if (item.bitmap) {
-		if (item.bitmap.destroy) {
-			item.bitmap.destroy();
-		} else {
-			if (item.bitmap._baseTexture) item.bitmap._baseTexture.destroy();
-			if (item.bitmap.__baseTexture) item.bitmap.__baseTexture.destroy(); // for the older version
-		}
+function trackMapResources(mapId, resourcePaths) {
+	const existingIndex = _recentMapsWithResources.findIndex((map) => map.mapId === mapId);
+	if (existingIndex !== -1)
+		_recentMapsWithResources.splice(existingIndex, 1);
+	_recentMapsWithResources.push({ mapId, resources: new Set(resourcePaths) });
+	if (_recentMapsWithResources.length > MAX_TRACKED_MAPS) {
+		const removedMap = _recentMapsWithResources.shift();
+		log(`Removed map ${removedMap.mapId} from tracking`);
 	}
-	delete ImageManager._imageCache._items[key];
-	return true;
 }
 
 function unloadUnusedResources(previousMapId, nextMapResources, onComplete) {
+	// If `previousMapId` has no loaded resources, simply call onComplete and return
 	if (!_loadedResourcesForMap[previousMapId]) {
 		if (onComplete) onComplete();
 		return;
 	}
 
-	const nextMapResourcesSet = new Set(nextMapResources);
+	// Combine the resource sets of the most recent tracked maps into a single set
+	const recentResourcesSet = new Set();
+	_recentMapsWithResources.forEach((map) => {
+		map.resources.forEach((resource) => recentResourcesSet.add(resource));
+	});
+
 	const resourcesToUnload = Array.from(_loadedResourcesForMap[previousMapId]).filter(
-		(resource) => !nextMapResourcesSet.has(resource)
+		(resource) => !recentResourcesSet.has(resource)
 	);
 
 	if (resourcesToUnload.length === 0) {
@@ -551,13 +634,19 @@ function unloadUnusedResources(previousMapId, nextMapResources, onComplete) {
 
 	let currentIndex = 0;
 	function unloadBatch() {
-		const endIndex = Math.min(currentIndex + unloadBatchSIze, resourcesToUnload.length);
-		for (let i = currentIndex; i < endIndex; i++)
-			if (deleteFromCache(resourcesToUnload[i]))
-					log(`Unloaded resource: ${resourcesToUnload[i]}`);
+		const endIndex = Math.min(currentIndex + unloadBatchSize, resourcesToUnload.length);
+		for (let i = currentIndex; i < endIndex; i++) {
+			if (deleteFromCache(resourcesToUnload[i])) {
+				log(`Unloaded resource: ${resourcesToUnload[i]}`);
+			}
+		}
 		currentIndex = endIndex;
+
+		// If all resources have been unloaded, clean up and call onComplete
 		if (currentIndex >= resourcesToUnload.length) {
-			resourcesToUnload.forEach((resource) => { _loadedResourcesForMap[previousMapId].delete(resource); });
+			resourcesToUnload.forEach((resource) => {
+				_loadedResourcesForMap[previousMapId].delete(resource);
+			});
 
 			if (_loadedResourcesForMap[previousMapId].size === 0)
 				delete _loadedResourcesForMap[previousMapId];
@@ -565,17 +654,19 @@ function unloadUnusedResources(previousMapId, nextMapResources, onComplete) {
 			log(`Completed unloading unused resources for map ${previousMapId}`);
 			if (onComplete) onComplete();
 		} else {
-			setTimeout(unloadBatch, 0); // asynchronous
+			setTimeout(unloadBatch, 0); // Asynchronous unloading
 		}
 	}
 	unloadBatch();
 }
 
+// Extend Scene_Map.prototype.onMapLoaded to use recent maps queue
 const _Scene_Map_onMapLoaded = Scene_Map.prototype.onMapLoaded;
-Scene_Map.prototype.onMapLoaded = function() {
+Scene_Map.prototype.onMapLoaded = function () {
 	_Scene_Map_onMapLoaded.call(this);
 
 	if (!preloadImages) return;
+
 	const mapId = $gameMap.mapId();
 	if (mapId === _previousMapId || _isPreloading) return;
 
@@ -583,16 +674,20 @@ Scene_Map.prototype.onMapLoaded = function() {
 
 	const mapData = $dataMap;
 	const newResourcePaths = extractImagePaths(mapData);
-	let previousMapResources = new Set();
-	if (_previousMapId !== -1 && _loadedResourcesForMap[_previousMapId])
-		previousMapResources = _loadedResourcesForMap[_previousMapId];
+	trackMapResources(mapId, newResourcePaths);
 
 	log(`Resources to preload: ${newResourcePaths.join(', ')}`);
+
+	// Unload unused resources based on the recent maps queue
 	unloadUnusedResources(_previousMapId, newResourcePaths, () => {
 		_isPreloading = true;
 		setTimeout(() => {
-		 preloadResourceBatch(newResourcePaths, 0, previousMapResources, 
-		 false, () => { _previousMapId = mapId; }); 
+			preloadResourceBatch(newResourcePaths, 0, new Set(), false, 
+			() => { 
+				_previousMapId = mapId; 
+				_isPreloading = false; 
+				log(`Finished preloading resources`);
+			});
 		}, 0);
 	});
 };
@@ -640,7 +735,7 @@ Game_Interpreter.prototype.command117 = function() {
 	let commonEventId = typeof this._params[0] === "number" ? this._params[0] : -1;
 	this._commonEventId = commonEventId;
 	this._childInterpreter._commonEventId = commonEventId;
-	preloadCommonEvent(commonEventId, false);
+	preloadCommonEvent(commonEventId, preloadCEOnDemand);
 	return ret;
 };
 
