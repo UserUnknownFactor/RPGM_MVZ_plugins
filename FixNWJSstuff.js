@@ -1,4 +1,4 @@
-// RPGM MV patches for latest NW.JS and additional item/armor/weapon name tags possibly lowercase
+// RPGM patches for latest NW.JS and additional MZ's + item/armor/weapon name tags possibly lowercase
 // Examples: \N{I|W|A}{L}?[#] (\NW[10] \NIL[55]) \B[1](bold)\B[0] \IT[1](italic)\IT[0] \OC[1](outline color)\OC[0]
 (function() {
 const MV_MODE = (Utils.RPGMAKER_NAME === "MV");
@@ -6,9 +6,9 @@ const ENABLE_ADDONS = true;
 
 const SceneBootStart_default = Scene_Boot.prototype.start;
 Scene_Boot.prototype.start = function () {
-	if (typeof nw === "object") {
+	if (typeof nw === "object")
 		nw.Window.get().on("close", () => nw.App.quit());
-	}
+
 	SceneBootStart_default.call(this);
 };
 
@@ -26,12 +26,8 @@ ImageCache.prototype._truncateCache = function(){
 				sizeLeft -= bitmap.width * bitmap.height;
 		} else {
 			if (item.bitmap) {
-				if (item.bitmap.destroy) {
-					item.bitmap.destroy();
-				} else {
-					if (item.bitmap._baseTexture) item.bitmap._baseTexture.destroy();
-					if (item.bitmap.__baseTexture) item.bitmap.__baseTexture.destroy();
-				}
+				if (item.bitmap._baseTexture) item.bitmap._baseTexture.destroy();
+				if (item.bitmap.__baseTexture) item.bitmap.__baseTexture.destroy();
 				item.bitmap = null;
 			}
 			delete items[item.key];
@@ -42,13 +38,9 @@ ImageCache.prototype._truncateCache = function(){
 Bitmap.prototype._createCanvas = function(width, height){
 	this.__canvas = this.__canvas || document.createElement('canvas');
 	this.__context = this.__canvas.getContext('2d', { willReadFrequently: true });
-	this.__canvas.width = Math.max(width || 0, 1);
-	this.__canvas.height = Math.max(height || 0, 1);
+	this.__canvas.width = Math.max((this._image ? this._image.width : width) || 0, 1);
+	this.__canvas.height = Math.max((this._image ? this._image.height : height) || 0, 1);
 	if (this._image) {
-		let w = Math.max(this._image.width || 0, 1);
-		let h = Math.max(this._image.height || 0, 1);
-		this.__canvas.width = w;
-		this.__canvas.height = h;
 		this._createBaseTexture(this._canvas);
 		this.__context.drawImage(this._image, 0, 0);
 	}
@@ -91,11 +83,16 @@ TouchInput._setupEventHandlers = function() {
 	document.addEventListener('touchcancel', this._onTouchCancel.bind(this));
 	document.addEventListener('pointerdown', this._onPointerDown.bind(this));
 };
-
-TouchInput._onWheel = function(event) {
-	this._events.wheelX += event.deltaX;
-	this._events.wheelY += event.deltaY;
+} // MV MODE END
+else {
+Bitmap.prototype._createCanvas = function(width, height) {
+	this._canvas = document.createElement("canvas");
+	this._context = this._canvas.getContext("2d", { willReadFrequently: true });
+	this._canvas.width = width;
+	this._canvas.height = height;
+	this._createBaseTexture(this._canvas);
 };
+} // MZ MODE END
 
 if (!ENABLE_ADDONS) return; // custom tags further
 
@@ -138,42 +135,54 @@ Window_Base.prototype.convertEscapeCharacters = function(text) {
 	return text;
 };
 
-const _Bitmap_initialize = Bitmap.prototype.initialize;
-Bitmap.prototype.initialize = function() {
-	_Bitmap_initialize.apply(this, arguments);
-	this.fontBold = false;
+// only patch if this RPGM doesn't support bold text (neither modded MV nor MZ) 
+if (Bitmap.prototype._makeFontNameText.toString().indexOf("Bold ") === -1) {
+	const _Bitmap_initialize = Bitmap.prototype.initialize;
+	Bitmap.prototype.initialize = function() {
+		_Bitmap_initialize.apply(this, arguments);
+		this.fontBold = false;
+	}
+	
+	Bitmap.prototype._makeFontNameText = function() {
+		const italic = this.fontItalic ? "Italic " : '';
+		const bold = this.fontBold ? "Bold " : '';
+		return italic + bold + this.fontSize + "px " + this.fontFace;
+	};
 }
-
-Bitmap.prototype._makeFontNameText = function() {
-	const italic = this.fontItalic ? "Italic " : '';
-	const bold = this.fontBold ? "Bold " : '';
-	return italic + bold + this.fontSize + "px " + this.fontFace;
-};
 
 Window_Base.prototype.processEscapeCharacter = function(code, textState) {
 	let param;
 	switch (code) {
-	case "B":
+	case "B": // bold
 		this.contents.fontBold = !!this.obtainEscapeParam(textState);
 		break;
-	case "IT":
+	case "IT": // italic
 		this.contents.fontItalic = !!this.obtainEscapeParam(textState);
 		break;
-	case "OC":
-		param = parseInt(this.obtainEscapeParam(textState));
+	case "OC": // outline color
+		param = parseInt(this.obtainEscapeParam(textState) || 0);
 		const px = 96 + (param % 8) * 12 + 6;
 		const py = 144 + Math.floor(param / 8) * 12 + 6;
 		const p = this.windowskin._context.getImageData(px, py, 1, 1).data;
 		const to_float = c => (c/255).toPrecision(2);
 		this.contents.outlineColor = `rgba(${to_float(p[0])}, ${to_float(p[1])}, ${to_float(p[2])}, 0.5)`;
 		break;
-	case 'C':
-		param = this.obtainEscapeParam(textState);
+	case 'C': // color
+		param = this.obtainEscapeParam(textState) || 0;
 		this.contents.textColor = this.textColor(param);
 		break;
-	case 'I':
+	case 'I': // icon
 		param = this.obtainEscapeParam(textState);
 		this.processDrawIcon(param, textState);
+		break;
+	case "PX": // position text x, MZ
+		textState.x = this.obtainEscapeParam(textState) || textState.startX || textState.left;
+		break;
+	case "PY": // position text y, MZ
+		textState.y = this.obtainEscapeParam(textState) || textState.startY || 0;
+		break;
+	case "FS": // font size, MZ
+		this.contents.fontSize = this.obtainEscapeParam(textState) || (this.standardFontSize ? this.standardFontSize() : $gameSystem.mainFontSize());
 		break;
 	case '{':
 		this.makeFontBigger();
@@ -183,7 +192,6 @@ Window_Base.prototype.processEscapeCharacter = function(code, textState) {
 		break;
 	}
 };
-
 
 Window_Base.prototype.makeFontBigger = function() {
 	if (this.contents.fontSize === this.standardFontSize())
@@ -198,6 +206,5 @@ Window_Base.prototype.makeFontSmaller = function() {
 	else if (this.contents.fontSize >= 24)
 		this.contents.fontSize -= 6;
 };
-} // MV MODE
 
 })();
