@@ -120,8 +120,9 @@
 (function() {
 const PLUGIN_NAME = 'PreloadSceneImages';
 
-const getBoolean = (str, def) => { return !!str ? !!str.match(/(?:true|y(?:es)?)/i) : !!def };
 const fs = require('fs');
+const getBoolean = (str, def) => (!!str ? !!str.match(/(?:true|y(?:es)?)/i) : !!def);
+
 const isMZ = Utils.RPGMAKER_NAME === "MZ";
 const MAX_ST_IMAGES_IN_CACHE = 200;
 const MAX_TRACKED_MAPS = 3; // Number of maps to retain resources for

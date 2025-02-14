@@ -211,8 +211,8 @@ const WOP = Window_Options.prototype;
 const oldMakeCommandList = WOP.makeCommandList;
 WOP.makeCommandList = function () {
 	oldMakeCommandList.call(this);
-	this.addCommand('Character Base Delay', 'characterBaseDelay');
-	this.addCommand('Character Extra Delay', 'characterExtraDelay');
+	this.addCommand('Character Delay', 'characterBaseDelay');
+	this.addCommand('Extra Delay', 'characterExtraDelay');
 };
 
 const oldStatusText = WOP.statusText;

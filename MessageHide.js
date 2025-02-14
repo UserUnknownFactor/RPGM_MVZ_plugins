@@ -35,7 +35,7 @@ Terms of Use:
 const PLUGIN_NAME = "MessageHide"
 const INPUT_ALIAS = 'Hide'
 
-const getBoolean = (str, def) => { return !!str ? !!str.match(/(?:true|y(?:es)?)/i) : !!def };
+const getBoolean = (str, def) => (!!str ? !!str.match(/(?:true|y(?:es)?)/i) : !!def);
 
 const parameters = PluginManager.parameters(PLUGIN_NAME);
 const pKey = String(parameters["Keys"] || "H").toLowerCase().split(" ");

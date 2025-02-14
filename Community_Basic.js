@@ -32,7 +32,7 @@
   *
  * @param enableAddonCommands
  * @desc Enables bold/italic/outline color tags and tags for item/armor/weapon name tags possibly lowercase. (on/off)
- * @default on
+ * @default off
  * 
  * @param fitWindowToScreen
  * @desc Fits window to the screen without taskbar height (corrected to static value). (on/off)
@@ -43,8 +43,8 @@
  * \PX, \PY, \FS MZ commands on MV
  *  \N{I|W|A}{L}?[#] names of I|W|A = item/weapon/armor [L = lowercase] (ex: \NW[10] \NIL[55])
  *  \B[1](bold)\B \IT[1](italic)\IT \OC[1](outline color)\OC[0]
- * Also changes \{ \} to go 12 when starting from normal font size and 6 otherwise,
- * also if its parameter is specified it is used as decrement/increment value. 
+ * Also changes \{ \} to use 12 when starting from normal font size and 6 otherwise,
+ * also if its parameter is specified it is used as the decrement/increment value. 
  * All tags support default/reset value without square bracketed parameter. 
  */
 
@@ -59,11 +59,11 @@ const parameters = PluginManager.parameters('Community_Basic');
 const cacheLimit = getNumber(parameters['cacheLimit'], 0);
 const screenWidth = getNumber(parameters['screenWidth'], 816);
 const screenHeight = getNumber(parameters['screenHeight'], 624);
-const renderingMode = parameters['renderingMode'].toLowerCase();
-const alwaysDash = parameters['alwaysDash'].toLowerCase() === 'on';
+const renderingMode = (parameters['renderingMode'] || '').toLowerCase();
+const alwaysDash = (parameters['alwaysDash'] || '').toLowerCase() === 'on';
 const windowWidthTo = getNumber(parameters['changeWindowWidthTo'], 0);
 const windowHeightTo = getNumber(parameters['changeWindowHeightTo'], 0);
-const enableAddons = getBoolean(parameters['enableAddonCommands'], true);
+const enableAddons = getBoolean(parameters['enableAddonCommands'], false);
 const fitWindowToScreen = getBoolean(parameters['fitWindowToScreen'], true);
 
 var windowWidth, windowHeight;
@@ -89,10 +89,10 @@ ConfigManager.applyData = function(config) {
 if (!fitWindowToScreen) {
 	if (windowWidthTo) windowWidth = windowWidthTo;
 	else if (screenWidth && screenWidth !== SceneManager._screenWidth) windowWidth = screenWidth;
-	
+
 	if (windowHeightTo) windowHeight = windowHeightTo;
 	else if (screenHeight && screenHeight !== SceneManager._screenHeight) windowHeight = screenHeight;
-	
+
 	if (screenWidth) {
 		SceneManager._screenWidth = screenWidth;
 		SceneManager._boxWidth = screenWidth;
@@ -114,10 +114,6 @@ if (!fitWindowToScreen) {
 		}
 	};
 } else {
-	// Store original functions to call later
-	const _Scene_Boot_start = Scene_Boot.prototype.start;
-	const _Scene_Base_start = Scene_Base.prototype.start;
-
 	// Function to get available screen space
 	function getAvailableScreenSpace() {
 		if (Utils.isNwjs()) {
@@ -133,33 +129,30 @@ if (!fitWindowToScreen) {
 
 	function getOriginalResolution() {
 		if (MV_MODE)
-			return { width: Graphics.width || screenWidth, height: Graphics.height || screenHeight }; // MV
-		return { width: Graphics._defaultWidth || screenWidth, height: Graphics._defaultHeight || screenHeight }; // MZ
+			return { width: screenWidth || Graphics.width, height: screenHeight || Graphics.height }; // MV
+		return { width: screenWidth || Graphics._defaultWidth, height: screenHeight || Graphics._defaultHeight }; // MZ
 	}
-	
+
 	function resizeGameWindow() {
 		const screenSpace = getAvailableScreenSpace();
 		const originalRes = getOriginalResolution();
-	
-		// Calculate scale based on both width and height
+
 		const scaleX = screenSpace.width / originalRes.width;
 		const scaleY = screenSpace.height / originalRes.height;
 		const scale = Math.min(scaleX, scaleY);
-	
-		// Calculate scaled dimensions
+
 		const newWidth = Math.floor(originalRes.width * scale);
 		const newHeight = Math.floor(originalRes.height * scale);
-	
-		// Resize renderer
-		Graphics._renderer.resize(newWidth, newHeight);
-		Graphics.width = newWidth;
-		Graphics.height = newHeight;
-		Graphics.boxWidth = newWidth;
-		Graphics.boxHeight = newHeight;
-	
-		// Set scale
+
+		// Set renderer to the right resolution
+		Graphics._renderer.resize(originalRes.width, originalRes.height);
+		Graphics.width = originalRes.width;
+		Graphics.height = originalRes.height;
+		Graphics.boxWidth = originalRes.width;
+		Graphics.boxHeight = originalRes.height;
+
 		Graphics._scale = scale;
-	
+
 		if (Utils.isNwjs()) {
 			const gui = require('nw.gui');
 			const win = gui.Window.get();
@@ -168,6 +161,7 @@ if (!fitWindowToScreen) {
 		}
 	}
 
+	const _Scene_Boot_start = Scene_Boot.prototype.start;
 	Scene_Boot.prototype.start = function () {
 		if (IS_NWJS)
 			nw.Window.get().on("close", () => nw.App.quit());
@@ -198,7 +192,7 @@ if (MV_MODE) {
 			}
 		}.bind(this));
 	};
-	
+
 	Bitmap.prototype._createCanvas = function(width, height){
 		this.__canvas = this.__canvas || document.createElement('canvas');
 		this.__context = this.__canvas.getContext('2d', { willReadFrequently: true });
@@ -284,7 +278,6 @@ Window_Base.prototype.convertEscapeCharacters = function(text) {
 			default:
 				return match;
 		}
-		return null;
 	});
 	text = text.replace(/\x1bN([IWA])(L)?\[(\d+)\]/gi, (match, type, isLowercase, index) => {
 		let data, name;
@@ -310,7 +303,7 @@ if (Bitmap.prototype._makeFontNameText.toString().indexOf("Bold ") === -1) {
 		_Bitmap_initialize.apply(this, arguments);
 		this.fontBold = false;
 	}
-	
+
 	Bitmap.prototype._makeFontNameText = function() {
 		const italic = this.fontItalic ? "Italic " : '';
 		const bold = this.fontBold ? "Bold " : '';
@@ -318,9 +311,12 @@ if (Bitmap.prototype._makeFontNameText.toString().indexOf("Bold ") === -1) {
 	};
 }
 
-Window_Base.prototype.getStandardFontSizeCompat = function(code, textState) {
-	return MV_MODE ? this.standardFontSize() : $gameSystem.mainFontSize();
-}
+if (MV_MODE)
+	Window_Base.prototype.getStandardFontSizeCompat = 
+		Window_Base.prototype.standardFontSize;
+else
+	Window_Base.prototype.getStandardFontSizeCompat = 
+		Game_System.prototype.mainFontSize;
 
 Window_Base.prototype.processEscapeCharacter = function(code, textState) {
 	let param;
@@ -382,5 +378,5 @@ Window_Base.prototype.makeFontSmaller = function(minus) {
 	else if (this.contents.fontSize >= 24)
 		this.contents.fontSize -= 6;
 };
-	
+
 })();

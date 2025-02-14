@@ -4,6 +4,9 @@
  License: WTFPL
  Free for commercial and non commercial use.
 ==============================================================================================
+@ help
+ Usage: add this line to your plugins:
+{"name":"RoamingSavePath","status":true,"description":"Sets custom save directory instead of www/save","parameters":{"Save Directory": null or path}}
 */
 
 (function () {

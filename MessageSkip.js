@@ -1,5 +1,5 @@
 //=============================================================================
-// UTA_MessageSkip.js
+// MessageSkip.js
 //=============================================================================
 // Version	: 1.10
 // LastUpdate : 2025.02.07
@@ -12,28 +12,29 @@
  * @plugindesc Allows to skip messages on pressing a particular key.
  *
  * @param Skip Key
- * @desc Set the message skip key. The value has been defined in the Input.KeyMapper is valid.
+ * @desc [String] Set the message skip key. The value has been defined in the Input.KeyMapper is valid.
  * @default control
  *
  * @param Max Speed
- * @desc Maximum movement speed during skipping, normal is 4 which disables this.
+ * @desc [Number] Maximum movement speed during skipping, normal is 4 which disables this.
  * @default 10
  *
  * @param Bubble Limit
- * @desc Limit animated bubbles above character to N frames during skipping.
+ * @desc [Number] Limit animated bubbles above character to N frames during skipping.
  * @default 5
  *
  * @param Scroll Multiplier
- * @desc Maximum accelerated scroll multiplier during skipping.
+ * @desc [Number] Maximum accelerated scroll multiplier during skipping.
  * @default 2.0
  *
  * @param Minimum Wait
- * @desc Minimum wait in frames during skipping; 0 value disables this option.
+ * @desc [Number] Minimum wait in frames during skipping; 0 value disables this option.
  * @default 15
  *
- * @param Show Trace
- * @desc Set state traces display.
- * true  : Show trace., false : Don't show trace.
+ * @param Debug Mode
+ * @desc [Boolean] Set debug mode.
+ * @on  : Show trace and enable debug branches.
+ * @off : No debugging branches.
  * @default false
  *
  * @help # Overview
@@ -45,10 +46,10 @@
  *   Skip Key [any key]
  *    Set the message skip key.
  *    The value that has been defined in Input.keyMapper is valid.
- *    Initial value is in 'control'.
+ *    Default value is in "control".
  * 
- *   Show Trace [true|false]
- *    Set whether the issue a trace for debugging.
+ *   Debug Mode [true|false]
+ *    Set whether use debugging branches like trace etc.
  * 
  * # Plugin Commands
  *   There is no plugin command.
@@ -59,7 +60,9 @@
  */
 
 (function(){
-const PLUGIN_NAME = 'UTA_MessageSkip'
+const PLUGIN_NAME = "MessageSkip";
+
+var INPUT_ALIAS = "Skip";
 const TOP_SPEED = 10;         // Maximum game character speed (4 = disabled)
 const FRAMES_TO_SHOW = 5;     // Accelerated balloon max frames (0 = disabled)
 const MAX_SCROLL_MUL = 2.0;   // Maximum scroll speed multiplier (1.0 = disabled)
@@ -69,22 +72,37 @@ const BIG_WAIT_MUL = 0.2;     // Wait reduction multiplier if wait >= 60 frames
 const SCROLL_ACCEL = 0.1;     // How fast scroll accelerates
 const SCROLL_DECEL = 0.2;     // How fast scroll decelerates
 
-const getBoolean = (str, def) => { return !!str ? !!str.match(/(?:true|y(?:es)?)/i) : !!def };
+const getBoolean = (str, def) => (!!str ? !!str.match(/(?:true|y(?:es)?)/i) : !!def);
 
 const parameters = PluginManager.parameters(PLUGIN_NAME);
-const _skipKey = String(parameters['Skip Key'] || "control");
-const _maxSpeed = Number(parameters['Max Speed'] || TOP_SPEED);
-const _limitFrames = Number(parameters['Bubble Limit'] || FRAMES_TO_SHOW);
-const _scrollMult = parseFloat(parameters['Scroll Multiplier'] || MAX_SCROLL_MUL);
-const _minWait = Number(parameters['Minimum Wait'] || MIN_WAIT);
-const _show_log = getBoolean(parameters['Show Trace'], false);
-const log = _show_log ? (s) => { console.log(`[${PLUGIN_NAME}] ${s}`); } : (s) => {};
+const DEBUG = getBoolean(parameters["Debug Mode"], true);
+const _maxSpeed = Number(parameters["Max Speed"] || TOP_SPEED);
+const _limitFrames = Number(parameters["Bubble Limit"] || FRAMES_TO_SHOW);
+const _scrollMult = parseFloat(parameters["Scroll Multiplier"] || MAX_SCROLL_MUL);
+const _minWait = Number(parameters["Minimum Wait"] || MIN_WAIT);
 
-log("Skip key bound: " + _skipKey);
+let _skipKey = String(parameters["Skip Key"] || "control");
+const IS_CTRL = _skipKey === "ctrl" || _skipKey === "control";
+
+const log = DEBUG ? (s) => { console.log(`[${PLUGIN_NAME}] ${s}`); } : (s) => {};
+
+const key_ids = {
+	"tab": 9, "shift": 16, "control": 17, "ctrl": 17, "alt": 18, "s": 83, "semicolon": 186, "comma": 188, "period": 190, "quote": 222,
+};
+
+if (!IS_CTRL) Input.keyMapper[key_ids[_skipKey]] = INPUT_ALIAS;
+else INPUT_ALIAS = _skipKey = "control";
+
+log(`Skip key bound: ${ _skipKey}; alias: ${INPUT_ALIAS}`);
+
+if (IS_CTRL && DEBUG) // Stop skipping on debug breaks & window switch
+	window.addEventListener("focus", () => {
+		document.dispatchEvent(new KeyboardEvent("keyup", { key: "Control" }));
+	});
 
 // Check if the skip key is pressed
 const isPressedMsgSkipButton = function(){
-	return Input.isPressed(_skipKey) && document.hasFocus();
+	return Input.isPressed(INPUT_ALIAS) && document.hasFocus();
 };
 
 //-----------------------------------------------------------------------------

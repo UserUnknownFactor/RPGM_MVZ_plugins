@@ -2,7 +2,7 @@
 //  Diagonal Movement Plugin
 //-----------------------------------------------------------------------------
 //  For: RPGMAKER MV/MZ
-//  GALV_DiagonalMovement.js
+//  DiagonalMovement.js
 //  Version: 2.0 (2025-02-09)
 //-----------------------------------------------------------------------------
 /*:
@@ -67,13 +67,13 @@ Galv.DM = Galv.DM || {};
 //  CODE STUFFS
 //-----------------------------------------------------------------------------
 (function () {
-const PLUGIN_NAME = 'GALV_DiagonalMovement';
+const PLUGIN_NAME = 'DiagonalMovement';
 const DIAGONAL_SPEED_MUL = 88;
 const SEARCH_LIMIT = 16; // path-finding search limit (RPGM: 12)
 
 // Plugin Parameters
 const parameters = PluginManager.parameters(PLUGIN_NAME);
-const getBoolean = (str, def) => { return !!str ? !!str.match(/(?:true|y(?:es)?)/i) : !!def };
+const getBoolean = (str, def) => (!!str ? !!str.match(/(?:true|y(?:es)?)/i) : !!def);
 
 Galv.DM.mouseMove = getBoolean(parameters["Enable With Mouse"], true);
 Galv.DM.diagGraphic = getBoolean(parameters["Diagonal Charset"], false);
